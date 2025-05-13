@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - main # Ejecuta en cada pull request a la rama main
+  workflow_dispatch: # Esto permite ejecutar el flujo de trabajo manualmente desde la UI de GitHub
 
 jobs:
   # Define un job llamado 'test-compose'
@@ -54,7 +55,7 @@ jobs:
       # Usamos curl para verificar que n8n esté accesible en el puerto 5678 (mapeado desde 443)
       # -k permite ignorar errores de certificado SSL/TLS (común en configuraciones HTTPS con n8n)
       # Si n8n usa HTTPS internamente (N8N_PROTOCOL=https), debes usar https://
-      - name: Wait for n8n to be healthy and responsive
+      - name: Wait for n8n to be responsive
         run: |
           echo "Waiting for n8n to be responsive on https://localhost:5678..."
           # Bucle para intentar conectar hasta por 60 segundos
