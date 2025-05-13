@@ -1,0 +1,84 @@
+# Nombre del flujo de trabajo
+name: Test Docker Compose N8N
+
+# Define cuándo se ejecutará este flujo de trabajo
+on:
+  push:
+    branches:
+      - main # Ejecuta en cada push a la rama main
+  pull_request:
+    branches:
+      - main # Ejecuta en cada pull request a la rama main
+
+jobs:
+  # Define un job llamado 'test-compose'
+  test-compose:
+    # Ejecuta el job en una máquina virtual con Ubuntu
+    runs-on: ubuntu-latest
+
+    # Pasos que se ejecutarán en el job
+    steps:
+      # Paso 1: Clona tu repositorio
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Paso 2: Configura Docker Buildx (útil para Docker Compose)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Paso 3: Configura Docker y Docker Compose
+      # Este action configura Docker y se asegura de que docker-compose esté disponible
+      - name: Set up Docker Compose
+        uses: docker/setup-docker@v4
+
+      # Paso 4: Define las variables de entorno necesarias para docker-compose
+      # Usa valores de ejemplo. ¡Reemplaza con Secrets si son sensibles!
+      - name: Define environment variables
+        run: |
+          echo "POSTGRES_DB=testdb" >> $GITHUB_ENV
+          echo "POSTGRES_USER=testuser" >> $GITHUB_ENV
+          echo "POSTGRES_PASSWORD=testpassword" >> $GITHUB_ENV
+          echo "N8N_HOST=localhost" >> $GITHUB_ENV # Para este test, localhost está bien
+          echo "WEBHOOK_URL=https://dummy-webhook.com/" >> $GITHUB_ENV
+          echo "GENERIC_TIMEZONE=Europe/Berlin" >> $GITHUB_ENV
+          echo "N8N_SECURE_COOKIE=false" >> $GITHUB_ENV # Ajusta según necesites, basado en tu compose
+
+      # Paso 5: Levanta los servicios usando docker-compose
+      # --build por si acaso, aunque usas una imagen específica
+      # -d para ejecutar en segundo plano
+      # docker-compose esperará a que postgres esté healthy antes de iniciar n8n
+      - name: Start services
+        run: docker-compose up --build -d
+
+      # Paso 6: Espera a que n8n esté saludable y responda
+      # Usamos curl para verificar que n8n esté accesible en el puerto 5678 (mapeado desde 443)
+      # -k permite ignorar errores de certificado SSL/TLS (común en configuraciones HTTPS con n8n)
+      # Si n8n usa HTTPS internamente (N8N_PROTOCOL=https), debes usar https://
+      - name: Wait for n8n to be healthy and responsive
+        run: |
+          echo "Waiting for n8n to be responsive on https://localhost:5678..."
+          # Bucle para intentar conectar hasta por 60 segundos
+          for i in $(seq 1 60); do
+            if curl -k -s -o /dev/null https://localhost:5678; then
+              echo "n8n is responsive."
+              exit 0
+            fi
+            echo "Attempt $i: n8n not responsive yet. Waiting 1 second..."
+            sleep 1
+          done
+          echo "Error: n8n did not become responsive within the timeout."
+          exit 1 # Falla el paso si n8n no responde después del tiempo de espera
+
+      # Paso 7: (Opcional) Ejecuta una prueba simple contra el servicio n8n
+      # Verifica que la ruta raíz responde sin errores HTTP (código 2xx o 3xx)
+      - name: Run a simple test request against n8n
+        run: |
+          echo "Making a test request to https://localhost:5678/ ..."
+          curl -k -f https://localhost:5678/ || { echo "Test request to n8n failed"; exit 1; }
+          echo "Test request successful."
+
+      # Paso 8: Limpieza - Baja los servicios de Docker Compose
+      # if: always() asegura que este paso se ejecute incluso si los pasos anteriores fallan
+      - name: Cleanup services
+        if: always()
+        run: docker-compose down

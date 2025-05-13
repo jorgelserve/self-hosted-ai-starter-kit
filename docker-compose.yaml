@@ -1,0 +1,50 @@
+services:
+  n8n:
+    image: docker.io/n8nio/n8n:1.88.0 # Considera usar una etiqueta más reciente si es apropiado para tu caso de uso.
+    container_name: n8n
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=443 # Puerto interno en el que n8n escucha dentro del contenedor
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      # Para el aviso de permisos del archivo de configuración:
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # Considera N8N_SECURE_COOKIE=true si N8N_PROTOCOL=https y n8n maneja SSL directamente.
+      # Si tienes un reverse proxy manejando SSL, la configuración puede variar.
+      - N8N_SECURE_COOKIE=false # Evalúa si debe ser true según tu configuración de HTTPS.
+      - TZ=${GENERIC_TIMEZONE}
+    ports:
+      - "5678:443" # Accedes a n8n en el host a través del puerto 5678, que se mapea al puerto 443 del contenedor.
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres: # Nombre del servicio del que depende
+        condition: service_healthy # Espera a que el servicio postgres esté 'healthy'
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck: # Definición del healthcheck para PostgreSQL
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost"]
+      interval: 10s # Intervalo entre verificaciones
+      timeout: 5s   # Tiempo de espera para que la verificación responda
+      retries: 5    # Número de reintentos antes de marcar como 'unhealthy'
+      start_period: 30s # Período de gracia inicial para que el contenedor arranque antes de que fallen los healthchecks
+    restart: unless-stopped # Es buena práctica añadir política de reinicio también a la BD
+
+volumes:
+  n8n_data:
+  postgres_data:
